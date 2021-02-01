@@ -3,15 +3,63 @@
 This is a proposal for the language go, to have a simple mostly golang 1 compatible form of type binding (aka Generics).
 
 ## Motivation
-There is the official golang draft in https://go.googlesource.com/proposal/+/refs/heads/master/design/go2draft-type-parameters.md.
-After careful reading and reading the discussions about this proposal I am somewhat disappointed by it. I am a bit fuzzed about the many brackets and type parameters, which have to be added at several places.
+There is the official golang draft in
+https://go.googlesource.com/proposal/+/refs/heads/master/design/go2draft-type-parameters.md#Very-high-level-overview
+After careful reading and reading the discussions about this proposal I am not convinced. I am a bit fuzzed about the many brackets and type parameters, which have to be added at several places.
 
-This solution lacks the facinating elegance, of the way the golang team managed to add inheritance to golang 1. Totally different from all other languages having inheritance, but a perfect illustration what inheritance really is, and how inheritance and delegation are interconnected. Simply drop the attribute name to move from delegation to inheritance.
+This solution lacks the fascinating elegance, of the way the golang team managed to add inheritance to golang 1. Totally different from all other languages having inheritance, but a perfect illustration what inheritance really is, and how inheritance and delegation are interconnected. Simply drop the attribute name to move from delegation to inheritance.
 
-This proposal starts from golang 1 form of inheritance by simply adding a mechanism for binding types at the import of a package. The "generic" package already in the golang 1 standard library my be used nearly unchanged, and can still be used in a polymorphic manor. By adding the type binding on the import the user of a standard package switches from dynamic type checking of his uses to static type checking. In exchange the otherwise necessary type casts my be dropped. Dropping the type bindings and reintroducing the type casts easily allows you to port the package back to golang 1.
+I personally think that adopting the generics are implemented since languages like Ada (which had predecessors) adopted by C++ Java and other later Languages is not the way to go in golang. Go allready has a generic type constructor interface. This is of course a polymorphic form, type errors are caught at runtime only.
+
+To go from polymorphic generic types, aka "interface" types in go, to monorphic types you need two things:
+* A way to define a type parameter.
+* A way to bind the type parameter with a concrete type.
+
+The above mentioned proposal does this by adding positional parameters to struct types and functions, this proposal uses named interface types and type binding on import, which leads to a way simpler and less intrusive addition to the language.
+
+How do we propose to solve the two tasks?
+* We simply use named interface types as type parameters, no need for a language change so far.
+* We add a type binding mechanism to the "import" statement.
+
+What we get is a way simpler addition to the language, which allows us:
+* Reuse golang packages mostly unchanged as they are in golang version.
+* going from generics
+
+## A simple example: container/list
+
+One of the most simple examples found in the standard library is the package container/list https://pkg.go.dev/container/list.
+In my personal experience I never used linked lists with a polymorphic type, so this is one of the classical examples.
+
+Using the slightly modified example from container/list.go:
+<pre>
+package main
+
+import "container/list"
+import "fmt"
+
+func main() {
+	// Create a new list and put some numbers in it.
+	l := list.New()
+	e4 := l.PushBack(4)
+	e1 := l.PushFront(1)
+	l.InsertBefore(3, e4)
+	l.InsertAfter(2, e1)
+
+	// Iterate through list and print its contents.
+	for e := l.Front(); e != nil; e = e.Next() {
+		var int result = (int)e.Value
+		fmt.Println(result)
+	}
+
+}
+</pre>
+
+I added an explicitly typed intermediate Variable of type "int" to the original example, which requires a type cast to access the List Value.
+
+What is the parameter type in "container/list"?
 
 ## Named Interface Types
-golang allows you to give a name to an interface type, the "Stringer" beeing one well known example. But if you look at container/list.go you find seven textual occurances of "interface{}". But as a go proverb say: "Interface nothing says nothing." Seven times nothing still does not say anything. Why not give it a name?
+Golang allows you to give a name to an interface type, the "Stringer" beeing one well known example. But if you look at container/list.go you find seven textual occurances of "interface{}". But as a go proverb say: "Interface nothing says nothing." Seven times nothing still does not say anything. Why not give it a name?
 * type Element = interface{}
 And replace the seven occurances of "interface{}" by this name. Naming nothing says something. This gets more obvious if we look at golang sync/map.go. Here we have 24 times "interface{}" but we are talking about two different types:
 * type Element = interface{}
