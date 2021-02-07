@@ -201,7 +201,9 @@ will compile just fine, because the type of Element is now the following type al
 	type ElementType int
 </pre>
 
-## Error handling
+The monomorphic transformation has to be transitiv: Whenever the binding type is a exported named interface type itself, the client of the package may add a binding, which then passes through, and requires more instances of the lower level package as well.
+
+## Compile time errors
 
 After binding a type on import we expect nice error messages in the following cases:
 1. the binding type does not implement the bound type
@@ -216,3 +218,76 @@ The two transformation behave differently with respect to the two errors:
 At first glance we expect no difference in the operational behaviour of the two programms resulting from the two program transformations. By getting rid of the overhead of construction the value of the interface types we only expect a better performance of the second version.
 But this is false in general as soon as you get more than one renamed instance of the same package. If the package contains a static variable, we now have two of them in the second transformation, but only one in the first.
 Outruling static variables in the packages would solve the problem, but that also would outrule perfectly reasonable use cases such as defining an "error" Variable for the package.
+The draft requires further discussion, ideally the two implementations should yield the same functional behaviour. For packages like "container/list" and other well defined types there is no difference in the functional behaviour. Ideally this could be verified at compile time, but i doubt this is possible in general.
+The compiler should be free to choose the implementaion yielding the best compromise between compile time, code size and runtime of the program.
+
+## Program transformation is a definition of semantics only
+
+Directly implementing this proposal in the compiler instead of a separate tool chain will improve quality:
+* error messages are directly given at the binding statement or the uses
+* local named type equivalence is separately testable
+* instantiation and renaming is transparently made on compile time or link time
+* the compiler or linker may optimize for the best possible implementation compromise
+
+# Discussion
+
+What are the achievements of this proposal?
+* Only one additional clause
+* Seemless integration
+* Reuse of golang 1 container packages without modification (except for additional naming)
+* the type bindings are "out of the way"
+* only one instantition per package and binding
+* it is not "generics"
+
+What are the disadvantages?
+* You can not define monomorphic generic types locally within a package
+* does not follow the trails of C++ or Java
+* it is not called "generics"
+
+## Only one place for the binding
+
+If you carefully look at the "container/list" example you find two places where other approaches require a type parameter:
+* When defining a variable of type "list.Element"
+* On the function "list.New"
+
+In the canonical example above there is only one place for passing the "int" Parameterbinding is required, namely the call of list.New(). But in a more elaborate example there might be a field in a local struct of type "list.Element" yielding to parameteriziation at several places.
+In our approach it is easy to locate the binding: "list" is the name of the bound package, or whatever you used in the import clause.
+
+## Seamless integration
+
+Changing from a golang 1 program which allready uses a generic type monomorphically to a golang 2 programm using compile time monomorphic is a simple as changing exactly one line. Add the type binding to the import. If it compiles You are done.
+
+You may also wish to drop the now redundant type casts (go vet may help locating them) but this is not necessary.
+Type two implementation may change the program behaviour, but typically only broken implementations do so.
+
+## Reuse and minimality
+
+Any reasonable defined golang 1 package using a named interface type may be imported with type bindings completely untouched. The lack of naming, when no methods are required is a easy to solve problem, and remains a completely legal golang 1 package.
+
+The "local named type equivalence" helps to improve the quality and uncover code glitches in generic packages.
+
+## Type bindings on import
+
+Adding the type binding to the import statement keeps the function bodies completely uncluttered by type parametrization. Type checking of the compiler yields perfect results, the fixed type bindings do not complicate the local type inference or type checking rules.
+
+## Only one instantiation per package and type binding
+
+If the same type binding is used in several compilation units, their is only one instantiation and one copy of the instatiated code necessary for the complete program.
+
+## It is not generics
+
+Leaving the usual trails of "generic" discussion is a feature. But it clearly follows the spirit of the go language design: Keep it simple and orthogonal and nicely fitted in the language: You want the "container/list" but only for elements of "YourPersonalData"? Add a binding on import. Done.
+
+## You can not define monomorphic generic types locally within a package
+
+I expect this to be a mayor draw back in the academic discussion of the features of this draft: You simply cannot put your favorite generic "max()" function example in a gist and discuss it. It allways requires two packages at least.
+
+But this is a purely academic problem. In any real world scenario I can not see reasonable "generic type" or "generic function" with general usefulness but putting it in a separate package with its own unit test to be a cost penalty at all. It is either generic and of general use, thus in its own package or c&p is the better paradigma.
+
+## does not follow the trails of C++ or Java
+
+Big malus. But again, that part of go's genes anyway.
+
+## it is not called "generics"
+
+Because it is not. It is type binding on package import. It only binds two types, one of them must be an interface type at compile time. The types and functions using the interface type are generic, but this is allready true in golang 1.
