@@ -1,15 +1,12 @@
-# importbinding
-## Named Interface Types used as Type Parameters
+# Binding interface types on import 
 This is a proposal for the language go, to have a simple mostly golang 1 compatible form of type binding (aka Generics).
 
 ## Motivation
 There is the official golang draft in
 https://go.googlesource.com/proposal/+/refs/heads/master/design/go2draft-type-parameters.md#Very-high-level-overview
-After careful reading and reading the discussions about this proposal I am not convinced. I am a bit fuzzed about the many brackets and type parameters, which have to be added at several places.
+After careful reading and reading the discussions about this proposal I am a bit fuzzed. This solution lacks the fascinating elegance, of the way the golang team managed to add inheritance to golang 1. Totally different from all other languages having inheritance, but a perfect illustration what inheritance really is, and how inheritance and delegation are interconnected. Simply drop the attribute name to move from delegation to inheritance.
 
-This solution lacks the fascinating elegance, of the way the golang team managed to add inheritance to golang 1. Totally different from all other languages having inheritance, but a perfect illustration what inheritance really is, and how inheritance and delegation are interconnected. Simply drop the attribute name to move from delegation to inheritance.
-
-I personally think that adopting the generics are implemented since languages like Ada (which had predecessors) adopted by C++ Java and other later Languages is not the way to go in golang. Go allready has a generic type constructor interface. This is of course a polymorphic form, type errors are caught at runtime only.
+Here is an attempt to solve the underlying issue in a completely different way, leading to a completely different result an in my opinion simpler code. Go already has a generic type constructor: the interface types. This is of course a form of dynamic polymorphism, i.e. the values contain the concrete types. What is missing in golang escpecially for container types is a way to constrain or parameterize such that the polymorphism is resolver at compile time, instead of runtime.
 
 To go from polymorphic generic types, aka "interface" types in go, to monorphic types you need two things:
 * A way to define a type parameter.
@@ -18,14 +15,14 @@ To go from polymorphic generic types, aka "interface" types in go, to monorphic 
 The above mentioned proposal does this by adding positional parameters to struct types and functions, this proposal uses named interface types and type binding on import, which leads to a way simpler and less intrusive addition to the language.
 
 How do we propose to solve the two tasks?
-* We simply use named interface types as type parameters, no need for a language change so far.
+* We use the existing mechanism to name and export a type and reinterpret it as a named type parameter of the package.
 * We add a type binding mechanism to the "import" statement.
 
-What we get is a way simpler addition to the language, which allows us:
-* Reuse golang packages mostly unchanged as they are in golang version.
-* going from generics
+So basically all you have to change if you want to switch from the runtime interface type polymorphism to compile time polymorphism is adding a type binding declaration in one place, on the "import" statement. We are able to:
+* Reuse golang version 1 packages unchanged as they are.
+* A simple addition to the import statement is all we syntactially need to change.
 
-## A simple example: container/list
+## A first example: container/list
 
 One of the most simple examples found in the standard library is the package container/list https://pkg.go.dev/container/list.
 In my personal experience I never used linked lists with a polymorphic type, so this is one of the classical examples.
@@ -56,19 +53,72 @@ func main() {
 
 I added an explicitly typed intermediate Variable of type "int" to the original example, which requires a type cast to access the List Value.
 
-What is the parameter type in "container/list"?
+Let us dive into the details:
+* What is the parameter type in "container/list"?
+* What is the "binding" we want to have?
+* What are the behavioural changes to the code?
+
+### Named type parameter
+
+Browsing through the source code of: https://go.googlesource.com/go/+/go1.15.8/src/container/list/list.go we find seven occurences of the type "interface{}", all in the same meaning:
+<pre>
+	type ValueType = interface{}
+</pre>
+Since "interface nothing says nothing" (https://go-proverbs.github.io/) let us first give nothing at least a name: "Design the architecture, name the components, document the details." We now have named an important design element the type of the component "Element", and at the same time documented an important detail.
+
+Glancing over a second example namely the "Map" type in sync.go: The use of "interface{}" there is used for two different types: "KeyType" and "ValueType" which are two separate and distinct types.
+
+### Type binding import
+
+After we named the parameter type of container/list.go to "ValueType" we are able to use this name to bind the Type in our example. We simply replace the "import" statement with:
+<pre>
+	import "container/list" type list.ValueType int
+</pre>
+The rest of the example is left unchanged.
+
+### What does this type binding import mean?
+
+The type binding import has to effects:
+* It checks that the binding is valid
+* For the rest of the compilation unit the type "list.ValueType" is treated as if defined as a type alias to "int".
+
+So we can now drop the type cast in:
+<pre>
+		var int result = (int)e.Value
+</pre>
+Adding a line such as:
+<pre>
+	l.PushBack("Hello world")
+</pre>
+fail to compile with: argument of type int expected, but is string.
 
 ## Named Interface Types
-Golang allows you to give a name to an interface type, the "Stringer" beeing one well known example. But if you look at container/list.go you find seven textual occurances of "interface{}". But as a go proverb say: "Interface nothing says nothing." Seven times nothing still does not say anything. Why not give it a name?
-* type Element = interface{}
-And replace the seven occurances of "interface{}" by this name. Naming nothing says something. This gets more obvious if we look at golang sync/map.go. Here we have 24 times "interface{}" but we are talking about two different types:
-* type Element = interface{}
-* type Key = interface{}
-After carefully replacing all occurences by either "Key" oder "Elemen" we read for example
-* func (m *Map) Store(key Key, value Element)
-Only the name of the parameter or return value gives a hint about which of the two types we are talking about. So misunderstanding the api is easy, no compile time typechecking helps keeping things separate.
+Golang allows you to give a name to an interface type, the "Stringer" beeing one well known example. In this respect nothing added to the language. But there is an additional constraint necessary for a Interface type to be useable as a type parameter of a package. When binding the type on import, we change from runtime bound types to compile time bound types. There we must be sure there are no runtime type errors in the implementation of the generic package. The "broken list" example illustrates this by modifying list.PushBack() to:
 
-## Named versus Structural Type Equivalence
+<pre>
+func (l *List) Remove(e *Element) ValueType {
+	if e.list == l {
+		// if e.list == l, l must have been initialized when e was inserted
+		// in l or l == nil (e is a zero Element) and l.remove will crash
+		l.remove(e)
+	}
+	return "42"
+}
+</pre>
+This modification breaks the semantics of remove by allways returning a fixed value. But when binding ValueType to "int" instead of "interface{}" this also needs to become a compile time type error in our example main import:
+<pre>
+	import "container/list" type list.ValueType int
+</pre>
+
+To fix this we require an exported named type to implement an additional property:
+* Local named type equivalence for named interface types.
+
+### Local named type equivalence for named interface types.
+
+What is needed to enable the compiler to catch the quite obvious type error in the above example, without outruling existing valid code?
+
+
+### Named versus Structural Type Equivalence
 Go uses mostly named type equivalence for struct types and structural type for interface types. It is brilliant how much of a difference this makes in comparison for example with the use of interfaces in Java, which are apart from the named type equivalence semantically close.
 
 But for the above example this is not so good. The two types:
