@@ -33,6 +33,28 @@ So all you have to change if you want to switch from the runtime interface type 
 * Reuse golang version 1 packages unchanged as they are.
 * A simple addition to the import statement is all we syntactially need to change.
 
+## Motivation after acceptance of the official proposal
+
+The official proposal is finally accepted. Which is good! But why do I still amend this proposal? Because of questions like: https://groups.google.com/g/golang-nuts/c/NUDZ7gL-IIM. The question is: The current go2go implementation does not allow one to do this:
+<pre>
+type List[T any] []T
+
+func ToList[T any](v []T) List[T] {
+        return List(v)
+}
+</pre>
+I have no implementation, so there are no bugs like that yet. How would that read in my terms?
+<pre>
+type T interface{}
+type List []T
+
+func ToList(v []T) List {
+        return List(v)
+}
+</pre>
+Would it compile without binding? It does, throw it into the playground. Does it compile after binding? Yes, see the monomorphic semantic program transformation. I.e. replace the line "type T interface{}" with "type T yourpackage.YourType" and ask the go compiler to check it for you. Having simpler syntax, simplifies things a lot. Is this approach more powerful than the standard approach? No. It comes with its own limitation: Type binding on import requires separate packages for polymorphic types and functions.
+
+
 ## A first example: container/list from the golang standard library
 
 One of the most simple examples found in the standard library is the package container/list https://pkg.go.dev/container/list.
